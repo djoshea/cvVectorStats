@@ -18,13 +18,13 @@ function [ CI, jackS ] = cvJackknifeCI( fullDataStatistic, dataFun, dataCell, al
     nFolds = min(numObs);
     foldIdx = getFoldedIdx(numObs, nFolds);
 
-    jackS = zeros(nFolds,length(fullDataStatistic));
+    jackS = zeros(nFolds,size(fullDataStatistic, 2), size(fullDataStatistic, 3));
     for j=1:nFolds
         deleteCell = dataCell;
         for x=1:length(deleteCell)
-            deleteCell{x}(foldIdx{x,j},:) = [];
+            deleteCell{x}(foldIdx{x,j},:,:) = [];
         end
-        jackS(j,:) = dataFun( deleteCell{:} );            
+        jackS(j,:,:) = dataFun( deleteCell{:} );            
     end
 
     ps = nFolds*fullDataStatistic - (nFolds-1)*jackS;

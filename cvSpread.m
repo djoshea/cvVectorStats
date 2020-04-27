@@ -29,6 +29,7 @@ function [ meanEuclidianDist, meanSquaredDist, CI, CIDistribution ] = cvSpread( 
     classList = unique(classIdx);
     nClasses = length(classList);
     nDim = size(obs,2);
+    nTime = size(obs, 3);
     
     idxPerClass = cell(nClasses,1);
     obsPerClass = zeros(nClasses,1);
@@ -38,7 +39,7 @@ function [ meanEuclidianDist, meanSquaredDist, CI, CIDistribution ] = cvSpread( 
     end
     
     nFolds = min(obsPerClass);
-    squaredDistEstimates = zeros(nFolds,nClasses);
+    squaredDistEstimates = zeros(nFolds,nClasses, nTime);
 
     %split observations into folds
     foldIdxPerClass = getFoldedIdx(obsPerClass, nFolds);
@@ -51,27 +52,29 @@ function [ meanEuclidianDist, meanSquaredDist, CI, CIDistribution ] = cvSpread( 
         allBigSetIdx = [];
         allSmallSetIdx = [];
         for c=1:nClasses
-            idxPerFold = round(obsPerClass(c)/nFolds);
+            %idxPerFold = round(obsPerClass(c)/nFolds);
 
             smallSetIdx{c} = foldIdxPerClass{c,x};                
             bigSetIdx{c} = horzcat(foldIdxPerClass{c,[1:(x-1), (x+1):nFolds]});
 
-            allBigSetIdx = [allBigSetIdx; idxPerClass{c}(bigSetIdx{c})];
-            allSmallSetIdx = [allSmallSetIdx; idxPerClass{c}(smallSetIdx{c})];
+            allBigSetIdx = [allBigSetIdx; idxPerClass{c}(bigSetIdx{c})]; %#ok<AGROW>
+            allSmallSetIdx = [allSmallSetIdx; idxPerClass{c}(smallSetIdx{c})]; %#ok<AGROW>
         end
 
-        centroid_smallSet = mean(obs(allSmallSetIdx,:));
-        centroid_bigSet = mean(obs(allBigSetIdx,:));
+        centroid_smallSet = mean(obs(allSmallSetIdx,:,:), 1);
+        centroid_bigSet = mean(obs(allBigSetIdx,:,:), 1);
 
-        vec_smallSet = zeros(nClasses, nDim);
-        vec_bigSet = zeros(nClasses, nDim);
+        vec_smallSet = zeros(nClasses, nDim, nTime);
+        vec_bigSet = zeros(nClasses, nDim, nTime);
         for c=1:nClasses
-            vec_smallSet(c,:) = mean(obs(idxPerClass{c}(smallSetIdx{c}),:),1) - centroid_smallSet;
-            vec_bigSet(c,:) = mean(obs(idxPerClass{c}(bigSetIdx{c}),:),1) - centroid_bigSet;
+            vec_smallSet(c,:,:) = mean(obs(idxPerClass{c}(smallSetIdx{c}),:,:),1) - centroid_smallSet;
+            vec_bigSet(c,:,:) = mean(obs(idxPerClass{c}(bigSetIdx{c}),:,:),1) - centroid_bigSet;
         end
 
         for c=1:nClasses
-            squaredDistEstimates(x,c) = vec_bigSet(c,:)*vec_smallSet(c,:)';
+            for t =1:nTime
+                squaredDistEstimates(x,c,t) = vec_bigSet(c,:,t)*vec_smallSet(c,:,t)';
+            end
         end
     end
 
@@ -85,7 +88,7 @@ function [ meanEuclidianDist, meanSquaredDist, CI, CIDistribution ] = cvSpread( 
     if ~strcmp(CIMode, 'none')
         classCell = cell(nClasses,1);
         for n=1:nClasses
-            classCell{n} = obs(classIdx==classList(n),:);
+            classCell{n} = obs(classIdx==classList(n),:,:);
         end
         
         [CI, CIDistribution] = cvCI([meanEuclidianDist, meanSquaredDist], @ciWrapper, classCell, CIMode, CIAlpha, CIResamples);
