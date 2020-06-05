@@ -4,7 +4,7 @@ function [ euclideanDistance, squaredDistance, CI, CIDistribution ] = cvDistance
 
     %inputs:
     
-    %class1 and class2 are N x D matrices, where D is the number of
+    % class1 and class2 are N x D x ... matrices, where D is the number of
     %dimensions and N is the number of samples
     
     %If class1 and class2 have different numbers of samples, this function
@@ -47,20 +47,25 @@ function [ euclideanDistance, squaredDistance, CI, CIDistribution ] = cvDistance
     end
 
     classSizes = [size(class1,1), size(class2,1)];
+    nTime = size(class1, 3);
     
     if classSizes(1)==classSizes(2)
         %if class sizes are equal, run a special fast implementation
-        squaredDistEstimates = zeros(size(class1,1),1);
+        squaredDistEstimates = zeros(size(class1,1),1,nTime);
         for x=1:size(class1,1)
             bigSetIdx = [1:(x-1),(x+1):size(class1,1)];
             smallSetIdx = x;
 
-            meanDiff_bigSet = mean(class1(bigSetIdx,:)-class2(bigSetIdx,:));
-            meanDiff_smallSet = class1(smallSetIdx,:)-class2(smallSetIdx,:);
+            meanDiff_bigSet = mean(class1(bigSetIdx,:,:)-class2(bigSetIdx,:,:));
+            meanDiff_smallSet = class1(smallSetIdx,:,:)-class2(smallSetIdx,:,:);
             if subtractMean
-                squaredDistEstimates(x) = (meanDiff_bigSet-mean(meanDiff_bigSet))*(meanDiff_smallSet-mean(meanDiff_smallSet))';
+                for t = 1:nTime
+                    squaredDistEstimates(x,t) = (meanDiff_bigSet(:, :, t)-mean(meanDiff_bigSet(:, :, t), 1))*(meanDiff_smallSet(:, :, t)-mean(meanDiff_smallSet(:, :, t), 1))';
+                end
             else
-                squaredDistEstimates(x) = meanDiff_bigSet*meanDiff_smallSet';
+                for t = 1:nTime
+                    squaredDistEstimates(x,t) = meanDiff_bigSet(:, :, t)*meanDiff_smallSet(:, :, t)';
+                end
             end
         end
     else
@@ -77,8 +82,8 @@ function [ euclideanDistance, squaredDistance, CI, CIDistribution ] = cvDistance
             bigSetIdx_2 = horzcat(foldIdxPerClass{2,[1:(x-1), (x+1):nFolds]});
             smallSetIdx_2 = foldIdxPerClass{2,x};
 
-            meanDiff_bigSet = mean(class1(bigSetIdx_1,:),1) - mean(class2(bigSetIdx_2,:),1);
-            meanDiff_smallSet = mean(class1(smallSetIdx_1,:),1)-mean(class2(smallSetIdx_2,:),1);
+            meanDiff_bigSet = mean(class1(bigSetIdx_1,:),1) - mean(class2(bigSetIdx_2,:),1); % 1 x D
+            meanDiff_smallSet = mean(class1(smallSetIdx_1,:),1)-mean(class2(smallSetIdx_2,:),1); % 1 x D
             if subtractMean
                 squaredDistEstimates(x) = (meanDiff_bigSet-mean(meanDiff_bigSet))*(meanDiff_smallSet-mean(meanDiff_smallSet))';
             else
@@ -88,7 +93,7 @@ function [ euclideanDistance, squaredDistance, CI, CIDistribution ] = cvDistance
     end
     
     squaredDistance = mean(squaredDistEstimates);
-    euclideanDistance = sign(squaredDistance)*sqrt(abs(squaredDistance));
+    euclideanDistance = sign(squaredDistance).*sqrt(abs(squaredDistance));
     
     %compute confidence interval if requensted
     if ~strcmp(CIMode, 'none')
