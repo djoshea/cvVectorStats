@@ -50,7 +50,8 @@ function [ euclideanDistance, squaredDistance, CI, CIDistribution ] = cvDistance
     nTime = size(class1{1}, 2);
     
     obsMat = cellfun(@(x) size(x, 1), [class1'; class2']); % 2 x D
-    [bigFoldMatrices, smallFoldIndices, nFolds] = getSequentialFoldIndicatorMatrices(obsMat, 'normalizeForAveraging', true); % C x D { nFolds x obsMat(c, d) } logical indicator matrices
+    smallAsMatrices = true;
+    [bigFoldMatrices, smallFold, nFolds] = getSequentialFoldIndicatorMatrices(obsMat, 'normalizeForAveraging', true, 'strategy', 'min', 'smallAsMatrices', smallAsMatrices); % C x D { nFolds x obsMat(c, d) } logical indicator matrices
     
     % if we multiply foldMatrices{1, d} * class1{d}, we have sum of observations included in each fold as nFolds x T
     % if instead of using foldMatrices directly, we normalize by the number of included rows to average appropriately
@@ -59,10 +60,16 @@ function [ euclideanDistance, squaredDistance, CI, CIDistribution ] = cvDistance
     [bigMeans1, smallMeans1, bigMeans2, smallMeans2] = deal(nan(nFolds, nTime, nDims));
     for d = 1:nDims
         bigMeans1(:, :, d) = bigFoldMatrices{1, d} * class1{d}; % (F x nObs) * (nObs x T) --> F x T
-        smallMeans1(:, :, d) = class1{d}(smallFoldIndices{1, d}, :); % nObs x T --> F x T
         
         bigMeans2(:, :, d) = bigFoldMatrices{2, d} * class2{d}; % (F x nObs) * (nObs x T) --> F x T
-        smallMeans2(:, :, d) = class2{d}(smallFoldIndices{2, d}, :); % (F x nObs) * (nObs x T) --> F x T
+        
+        if smallAsMatrices
+            smallMeans1(:, :, d) = smallFold{1, d} * class1{d}; % (F x nObs) * (nObs x T) --> F x T
+            smallMeans2(:, :, d) = smallFold{2, d} * class2{d}; % (F x nObs) * (nObs x T) --> F x T
+        else
+            smallMeans1(:, :, d) = class1{d}(smallFold{1, d}, :); % nObs x T --> F x T
+            smallMeans2(:, :, d) = class2{d}(smallFold{2, d}, :); % (F x nObs) * (nObs x T) --> F x T
+        end 
     end
     
     meanDiff_bigSet = bigMeans1 - bigMeans2; % F x T x D 
@@ -73,15 +80,15 @@ function [ euclideanDistance, squaredDistance, CI, CIDistribution ] = cvDistance
         meanDiff_smallSet = meanDiff_smallSet - mean(meanDiff_smallSet, 3);
     end
     
-    squaredDistEstimates = sum(meanDiff_bigSet .* meanDiff_smallSet, 3);
+    squaredDistEstimates = sum(meanDiff_bigSet .* meanDiff_smallSet, 3); % F x T x D --> F x T
     
-    squaredDistance = mean(squaredDistEstimates);
-    euclideanDistance = sign(squaredDistance)*sqrt(abs(squaredDistance));
+    squaredDistance = mean(squaredDistEstimates, 1); % F x T --> 1 x T
+    euclideanDistance = sign(squaredDistance).*sqrt(abs(squaredDistance)); % 1 x T
     
     %compute confidence interval if requensted
     if ~strcmp(CIMode, 'none')
         wrapperFun = @(x,y)(ciWrapper(x,y,subtractMean));
-        [CI, CIDistribution] = cvCISequential([euclideanDistance, squaredDistance], wrapperFun, {class1, class2}, CIMode, CIAlpha, CIResamples);
+        [CI, CIDistribution] = cvCISequential([euclideanDistance; squaredDistance], wrapperFun, {class1, class2}, CIMode, CIAlpha, CIResamples);
     else
         CI = [];
         CIDistribution = [];
@@ -90,7 +97,7 @@ end
 
 function output = ciWrapper(class1, class2, subtractMean)
     [ euclideanDistance, squaredDistance ] = cvDistanceSequential( class1, class2, subtractMean );
-    output = [euclideanDistance, squaredDistance];
+    output = [euclideanDistance; squaredDistance];
 end
 
 function vec = makecol( vec )

@@ -11,6 +11,8 @@ function [ CI, jackS ] = cvJackknifeCISequential( fullDataStatistic, dataFun, da
     %the jackknife. 
     %
     % in sequential mode each entry of dataCell{.} is a cell array of size nDims x 1
+    %
+    % CI is 2 x nOuts (x time)
             
     nClasses = numel(dataCell);
     nDims = numel(dataCell{1});
@@ -19,24 +21,28 @@ function [ CI, jackS ] = cvJackknifeCISequential( fullDataStatistic, dataFun, da
     minObs = min(obsMat, [], 'all');
     assert(minObs >= 3, 'Minimum of 3 observations per dimension required for jackknife');
     
-    [~, smallFoldIndices, nFolds] = getSequentialFoldIndicatorMatrices(obsMat); % C x D 
+    [~, smallFoldIndices, nFolds] = getSequentialFoldIndicatorMatrices(obsMat, 'strategy', 'min', 'smallAsMatrices', false); % C x D 
 
-    jackS = zeros(nFolds,size(fullDataStatistic, 2), size(fullDataStatistic, 3));
+    jackS = zeros(nFolds,size(fullDataStatistic, 1), size(fullDataStatistic, 2));
     for f=1:nFolds
         deleteCell = dataCell;
         for c=1:nClasses
             for d = 1:nDims
-                idx_del = smallFoldIndices{c, d}(f);
+                if iscell(smallFoldIndices{c, d})
+                    idx_del = smallFoldIndices{c, d}{f};
+                else
+                    idx_del = smallFoldIndices{c, d}(f);
+                end
                 deleteCell{c}{d}(idx_del,:,:) = [];
             end
         end
-        jackS(f,:,:) = dataFun( deleteCell{:} );            
+        jackS(f,:,:) = shiftdim(dataFun( deleteCell{:} ), -1); % nStats Time --> 1 x nStats x Time     
     end
 
-    ps = nFolds*fullDataStatistic - (nFolds-1)*jackS;
-    v = var(ps);
+    ps = nFolds*shiftdim(fullDataStatistic, -1) - (nFolds-1)*jackS; % folds x nStats x time
+    v = var(ps, [], 1); % 1 x nStats x time
     
     multiplier = norminv((1-alpha/2), 0, 1);
-    CI = [(fullDataStatistic - multiplier*sqrt(v/nFolds)); (fullDataStatistic + multiplier*sqrt(v/nFolds))];
+    CI = [(shiftdim(fullDataStatistic, -1) - multiplier*sqrt(v/nFolds)); (shiftdim(fullDataStatistic, -1) + multiplier*sqrt(v/nFolds))];
 end
 

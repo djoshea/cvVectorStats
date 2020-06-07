@@ -14,8 +14,8 @@ function [ CI, bootStats ] = cvBootCISequential( fullDataStatistic, dataFun, dat
     nClasses = numel(dataCell);
     nDims = numel(dataCell{1});
     
-    bootStats = zeros(nResamples,size(fullDataStatistic, 2), size(fullDataStatistic, 3));
-    for n=1:nResamples
+    bootStats = zeros(nResamples,size(fullDataStatistic, 1), size(fullDataStatistic, 2));
+    parfor n=1:nResamples
         resampledCell = dataCell;
         for c=1:nClasses
             for d = 1:nDims
@@ -24,13 +24,16 @@ function [ CI, bootStats ] = cvBootCISequential( fullDataStatistic, dataFun, dat
             end
         end
         
-        bootStats(n,:,:) = dataFun(resampledCell{:});
+        bootStats(n,:,:) = shiftdim(dataFun(resampledCell{:}), -1);
+        if mod(n, 100) == 0
+            fprintf('Resample %d / %d\n', n, nResamples);
+        end  
     end
     
     if strcmp(mode, 'bootCentered')
-        cenStats = bootStats - mean(bootStats);
-        cenStats = cenStats + fullDataStatistic;
-        CI = prctile(cenStats, 100*[alpha/2, 1-alpha/2], 1);
+        cenStats = bootStats - mean(bootStats, 1); % nResamples x nOut x T
+        cenStats = cenStats + shiftdim(fullDataStatistic, -1);
+        CI = prctile(cenStats, 100*[alpha/2, 1-alpha/2], 1); % 2 x nOut x T
     elseif strcmp(mode, 'bootPercentile')
         CI = prctile(bootStats, 100*[alpha/2, 1-alpha/2], 1);
     else
