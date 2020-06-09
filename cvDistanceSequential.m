@@ -50,39 +50,22 @@ function [ euclideanDistance, squaredDistance, CI, CIDistribution ] = cvDistance
     nTime = size(class1{1}, 2);
     
     obsMat = cellfun(@(x) size(x, 1), [class1'; class2']); % 2 x D
-    smallAsMatrices = true;
-    [bigFoldMatrices, smallFold, nFolds] = getSequentialFoldIndicatorMatrices(obsMat, 'normalizeForAveraging', true, 'strategy', 'min', 'smallAsMatrices', smallAsMatrices); % C x D { nFolds x obsMat(c, d) } logical indicator matrices
+    [bigFoldMatrices, smallFoldMatrices, nFolds, nObsBig, nObsSmall] = getSequentialFoldIndicatorMatrices(obsMat); % C x D { nFolds x obsMat(c, d) } logical indicator matrices
     
     % if we multiply foldMatrices{1, d} * class1{d}, we have sum of observations included in each fold as nFolds x T
     % if instead of using foldMatrices directly, we normalize by the number of included rows to average appropriately
     % want to assmelbe these set-wise means into F x T x D matrices, which can then be reshaped and multiplied
     
-    [bigMeans1, smallMeans1, bigMeans2, smallMeans2] = deal(nan(nFolds, nTime, nDims));
+    squaredDistByDim = nan(nDims, nTime);
     for d = 1:nDims
-        bigMeans1(:, :, d) = bigFoldMatrices{1, d} * class1{d}; % (F x nObs) * (nObs x T) --> F x T
-        
-        bigMeans2(:, :, d) = bigFoldMatrices{2, d} * class2{d}; % (F x nObs) * (nObs x T) --> F x T
-        
-        if smallAsMatrices
-            smallMeans1(:, :, d) = smallFold{1, d} * class1{d}; % (F x nObs) * (nObs x T) --> F x T
-            smallMeans2(:, :, d) = smallFold{2, d} * class2{d}; % (F x nObs) * (nObs x T) --> F x T
-        else
-            smallMeans1(:, :, d) = class1{d}(smallFold{1, d}, :); % nObs x T --> F x T
-            smallMeans2(:, :, d) = class2{d}(smallFold{2, d}, :); % (F x nObs) * (nObs x T) --> F x T
-        end 
+        bigMeans1 = bigFoldMatrices{1, d} * class1{d} ./ nObsBig{1,d}; % (F x nObs) * (nObs x T) --> F x T
+        bigMeans2 = bigFoldMatrices{2, d} * class2{d} ./ nObsBig{2,d}; % (F x nObs) * (nObs x T) --> F x T
+        smallMeans1 = smallFoldMatrices{1, d} * class1{d}./ nObsSmall{1,d}; % (F x nObs) * (nObs x T) --> F x T
+        smallMeans2 = smallFoldMatrices{2, d} * class2{d} ./ nObsSmall{2,d}; % (F x nObs) * (nObs x T) --> F x T
+        squaredDistByDim(d, :) = mean((bigMeans1 - bigMeans2) .* (smallMeans1 - smallMeans2), 1); % F x T --> 1 x T
     end
     
-    meanDiff_bigSet = bigMeans1 - bigMeans2; % F x T x D 
-    meanDiff_smallSet = smallMeans1 - smallMeans2; % F x T x D
-        
-    if subtractMean
-        meanDiff_bigSet = meanDiff_bigSet - mean(meanDiff_bigSet, 3);
-        meanDiff_smallSet = meanDiff_smallSet - mean(meanDiff_smallSet, 3);
-    end
-    
-    squaredDistEstimates = sum(meanDiff_bigSet .* meanDiff_smallSet, 3); % F x T x D --> F x T
-    
-    squaredDistance = mean(squaredDistEstimates, 1); % F x T --> 1 x T
+    squaredDistance = sum(squaredDistByDim, 1); % D x T --> 1 x T
     euclideanDistance = sign(squaredDistance).*sqrt(abs(squaredDistance)); % 1 x T
     
     %compute confidence interval if requensted
