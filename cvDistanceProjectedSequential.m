@@ -50,33 +50,44 @@ function [ euclideanDistance, squaredDistance, CI, CIDistribution ] = cvDistance
     nTime = size(class1{1}, 2);
     
     assert(size(projectionKbyD, 2) == nDims);
-    K = size(projectionKbyD, 1);
-    W = projectionKbyD;
+    W = projectionKbyD'; % K by D --> D x K
     
     obsMat = cellfun(@(x) size(x, 1), [class1'; class2']); % 2 x D
     [bigFoldMatrices, smallFoldMatrices, nFoldsByDim, nObsBig, nObsSmall] = getSequentialFoldIndicatorMatrices(obsMat); % C x D { nFolds x obsMat(c, d) } logical indicator matrices
     
+    % compute the big (Delta) and small (delta) fold differences for each fold (for each dimension)
     % if we multiply foldMatrices{1, d} * class1{d}, we have sum of observations included in each fold as nFolds x T
     % if instead of using foldMatrices directly, we normalize by the number of included rows to average appropriately
     % want to assmelbe these set-wise means into F x T x D matrices, which can then be reshaped and multiplied
-    
-    [alpha, beta, gamma] = deal(nan(nDims, nTime)); % D x T
-    
+    [mean_Delta, mean_delta] = deal(nan(nDims, nTime)); 
+    A = nan(nDims, nDims, nTime); % D x D x T
     for d = 1:nDims
         bigMeans1 = bigFoldMatrices{1, d} * class1{d} ./ nObsBig{1,d}; % (F x nObs) * (nObs x T) --> F x T
         bigMeans2 = bigFoldMatrices{2, d} * class2{d} ./ nObsBig{2,d}; % (F x nObs) * (nObs x T) --> F x T
         smallMeans1 = smallFoldMatrices{1, d} * class1{d}./ nObsSmall{1,d}; % (F x nObs) * (nObs x T) --> F x T
         smallMeans2 = smallFoldMatrices{2, d} * class2{d} ./ nObsSmall{2,d}; % (F x nObs) * (nObs x T) --> F x T
         
-        alpha(d, :) = mean((bigMeans1 - bigMeans2) .* (smallMeans1 - smallMeans2), 1);
-        beta(d, :) = mean(bigMeans1 - bigMeans2, 1);
-        gamma(d, :) = mean(smallMeans1 - smallMeans2, 1);
+        mean_Delta(d, :) = mean(bigMeans1 - bigMeans2, 1); % F x T --> 1 x T
+        mean_delta(d, :) = mean(smallMeans1 - smallMeans2, 1); % F x T --> 1 x T
+        
+        % and fill in the diagonal term of A
+        A(d, d, :) = mean( (bigMeans1 - bigMeans2) .* (smallMeans1 - smallMeans2), 1); % F x T --> 1 x T
     end
 
-    squaredDistByK = (W.^2) * alpha + (W * beta) .* (W * gamma); % each term is (K x D) * (D x T) --> K x T
+    % now loop over each pair of dimensions to fill in the off-diagonal terms
+    for d = 1:nDims
+        for e = 1:nDims
+            if d == e, continue, end
+            A(d, e, :) = mean_Delta(d, :) .* mean_delta(e, :); % 1 x 1 x T
+        end
+    end
 
-    squaredDistance = sum(squaredDistByK, 1); % K x T --> 1 x T
-    euclideanDistance = sign(squaredDistance).*sqrt(abs(squaredDistance)); % 1 x T
+    % Now we have A (D x D x T) and want to compute
+    squaredDistance = nan(1, nTime);
+    for t = 1:nTime
+        squaredDistance(t) = trace(W' * A(:, :, t) * W);
+    end
+   euclideanDistance = sign(squaredDistance).*sqrt(abs(squaredDistance)); % 1 x T
     
     %compute confidence interval if requensted
     if ~strcmp(CIMode, 'none')
