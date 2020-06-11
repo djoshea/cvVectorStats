@@ -9,17 +9,15 @@ function [ foldIdxPerClass, nPerFold ] = getFoldedIdx( obsPerClass, nFolds )
     
     nClasses = length(obsPerClass);
     foldIdxPerClass = cell(nClasses,nFolds);
-    nPerFold = zeros(nClasses, nFolds);
+    
     for c=1:nClasses
         minPerFold = floor(obsPerClass(c)/nFolds);
         remainder = obsPerClass(c)-minPerFold*nFolds;
 
         if remainder>0
             currIdx = 1:(minPerFold+1);
-            nPerFold(c, :) = minPerFold+1;
         else
             currIdx = 1:minPerFold;
-            nPerFold(c, :) = minPerFold;
         end
 
         for x=1:nFolds
@@ -27,9 +25,10 @@ function [ foldIdxPerClass, nPerFold ] = getFoldedIdx( obsPerClass, nFolds )
             currIdx = currIdx + length(currIdx);
             if x==remainder
                 currIdx(end)=[];
-                nPerFold(c, x) = nPerFold(c, x) - 1;
             end
         end
     end
+    
+    nPerFold = cellfun(@numel, foldIdxPerClass);
 end
 
