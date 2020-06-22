@@ -53,7 +53,7 @@ function [ euclideanDistance, squaredDistance, CI, CIDistribution ] = cvDistance
     W = projectionKbyD'; % K by D --> D x K
     
     obsMat = cellfun(@(x) size(x, 1), [class1'; class2']); % 2 x D
-    [bigFoldMatrices, smallFoldMatrices, nFoldsByDim, nObsBig, nObsSmall] = getSequentialFoldIndicatorMatrices(obsMat); % C x D { nFolds x obsMat(c, d) } logical indicator matrices
+    [bigFoldMatrices, smallFoldMatrices, ~, nObsBig, nObsSmall] = getSequentialFoldIndicatorMatrices(obsMat); % C x D { nFolds x obsMat(c, d) } logical indicator matrices
     
     % compute the big (Delta) and small (delta) fold differences for each fold (for each dimension)
     % if we multiply foldMatrices{1, d} * class1{d}, we have sum of observations included in each fold as nFolds x T
@@ -92,7 +92,7 @@ function [ euclideanDistance, squaredDistance, CI, CIDistribution ] = cvDistance
     %compute confidence interval if requensted
     if ~strcmp(CIMode, 'none')
         wrapperFun = @(x,y)(ciWrapper(x,y, projectionKbyD, subtractMean));
-        [CI, CIDistribution] = cvCISequential([euclideanDistance, squaredDistance], wrapperFun, {class1, class2}, CIMode, CIAlpha, CIResamples);
+        [CI, CIDistribution] = cvCISequential([euclideanDistance; squaredDistance], wrapperFun, {class1, class2}, CIMode, CIAlpha, CIResamples);
     else
         CI = [];
         CIDistribution = [];
@@ -101,7 +101,7 @@ end
 
 function output = ciWrapper(class1, class2, projectionKbyD, subtractMean)
     [ euclideanDistance, squaredDistance ] = cvDistanceProjectedSequential( class1, class2, projectionKbyD, subtractMean );
-    output = [euclideanDistance, squaredDistance];
+    output = [euclideanDistance; squaredDistance];
 end
 
 function vec = makecol( vec )

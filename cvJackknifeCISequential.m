@@ -31,7 +31,7 @@ function [ CI, jackS ] = cvJackknifeCISequential( fullDataStatistic, dataFun, da
     totalFolds = sum(nFoldsByDim);
     
     jackS = cell(nDims, 1);
-    fprintf('Looping over dimensions');
+    fprintf('Looping over dimensions\n');
     parfor d = 1:nDims
         nFolds = nFoldsByDim(d);
         jackS{d} = zeros(nFolds,size(fullDataStatistic, 1), size(fullDataStatistic, 2));

@@ -50,7 +50,7 @@ function [ euclideanDistance, squaredDistance, CI, CIDistribution ] = cvDistance
     nTime = size(class1{1}, 2);
     
     obsMat = cellfun(@(x) size(x, 1), [class1'; class2']); % 2 x D
-    [bigFoldMatrices, smallFoldMatrices, nFolds, nObsBig, nObsSmall] = getSequentialFoldIndicatorMatrices(obsMat); % C x D { nFolds x obsMat(c, d) } logical indicator matrices
+    [bigFoldMatrices, smallFoldMatrices, ~, nObsBig, nObsSmall] = getSequentialFoldIndicatorMatrices(obsMat); % C x D { nFolds x obsMat(c, d) } logical indicator matrices
     
     % if we multiply foldMatrices{1, d} * class1{d}, we have sum of observations included in each fold as nFolds x T
     % if instead of using foldMatrices directly, we normalize by the number of included rows to average appropriately
