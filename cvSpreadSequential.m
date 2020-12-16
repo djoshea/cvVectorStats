@@ -91,23 +91,26 @@ function [ euclideanDistance, squaredDistance, CI, CIDistribution ] = cvSpreadSe
     
     %compute confidence interval if requensted
     if ~strcmp(CIMode, 'none')
-        % dataCell is nClasses { nDims { nObs x T } }
+        % the confidence interval functions cvJackknifeCI and cvBootstrapCI expect a single input that is 
+        
+        % dataByClass is nClasses x nDims { nObs x T }
+        % cvCISequential needs nClasses { nDims { nObs x T } } 
         classCell = cell(nClasses,1);
         for n=1:nClasses
             classCell{n} = dataByClass(c, :)';
         end
         
-        [CI, CIDistribution] = cvCI([euclideanDistance; squaredDistance], @ciWrapper, classCell, CIMode, CIAlpha, CIResamples);
+        [CI, CIDistribution] = cvCISequential([euclideanDistance; squaredDistance], @(varargin) ciWrapper(subtractMean, varargin{:}), classCell, CIMode, CIAlpha, CIResamples);
     else
         CI = [];
         CIDistribution = [];
     end
 end
 
-function output = ciWrapper(dataCell, subtractMean)
-     % dataCell is nClasses { nDims { nObs x T } }
+function output = ciWrapper(subtractMean, varargin)
+     % varargin is nClasses { nDims { nObs x T } }
      % cvSpreadSequential needs nDims { nObs x T } for all classes combined
-     dataFlat = cat(2, dataCell{:}); % D x C
+     dataFlat = cat(2, varargin{:}); % D x C
      nDims = size(dataFlat, 1);
      data = cell(nDims, 1);
      classIdx = cell(nDims, 1);
