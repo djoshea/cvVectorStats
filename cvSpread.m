@@ -61,14 +61,14 @@ function [ meanEuclidianDist, meanSquaredDist, CI, CIDistribution ] = cvSpread( 
             allSmallSetIdx = [allSmallSetIdx; idxPerClass{c}(smallSetIdx{c})]; %#ok<AGROW>
         end
 
-        centroid_smallSet = mean(obs(allSmallSetIdx,:,:), 1);
-        centroid_bigSet = mean(obs(allBigSetIdx,:,:), 1);
+        centroid_smallSet = mean(obs(allSmallSetIdx,:,:), 1, 'omitnan');
+        centroid_bigSet = mean(obs(allBigSetIdx,:,:), 1, 'omitnan');
 
         vec_smallSet = zeros(nClasses, nDim, nTime);
         vec_bigSet = zeros(nClasses, nDim, nTime);
         for c=1:nClasses
-            vec_smallSet(c,:,:) = mean(obs(idxPerClass{c}(smallSetIdx{c}),:,:),1) - centroid_smallSet;
-            vec_bigSet(c,:,:) = mean(obs(idxPerClass{c}(bigSetIdx{c}),:,:),1) - centroid_bigSet;
+            vec_smallSet(c,:,:) = mean(obs(idxPerClass{c}(smallSetIdx{c}),:,:),1, 'omitnan') - centroid_smallSet;
+            vec_bigSet(c,:,:) = mean(obs(idxPerClass{c}(bigSetIdx{c}),:,:),1, 'omitnan') - centroid_bigSet;
         end
 
         for c=1:nClasses

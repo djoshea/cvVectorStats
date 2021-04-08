@@ -1,4 +1,4 @@
-function testSpreadSequential(plotDir, testCI, testPermTest)
+function testSpreadProjectedSequential()
     %%
     %The following samples data from eight multivariate distributions whose mean vectors
     %lie in a 2D ring in D dimensions. Then, the euclidean distance of each mean vector
@@ -20,7 +20,11 @@ function testSpreadSequential(plotDir, testCI, testPermTest)
     nTime = 90; % must be at least 40
     nConditions = 8;
     
-    nReps = 10;
+    nDimsProj = 10;
+    W = randn(nDims, nDimsProj);
+%     W = eye(nDims);
+    
+    nReps = 100;
     rng(1);
 
     % time course of tuning strength
@@ -69,13 +73,15 @@ function testSpreadSequential(plotDir, testCI, testPermTest)
         centroid = mean(means, 1); % C x T x D --> 1 x T x D
         
         % take 2-norm over dimensions, mean over conditions --> 1 x T --> T x 1
-        spreadEst(:,r) = mean(vecnorm(means - centroid, 2, 3), 1)';
-        spreadEstUnbiased(:,r) = cvSpreadSequential( data, conditions );
+        deltas = TensorUtils.linearCombinationAlongDimension(means - centroid, 3, W'); % C x T x N --> C x T x K
+        spreadEst(:,r) = mean(vecnorm(deltas, 2, 3), 1)';
+        spreadEstUnbiased(:,r) = cvSpreadProjectedSequential( data, conditions, W' );
     end
     
     true_rates = permute(max_rates_dc, [2 3 1]) .* shiftdim(tuningProfile, -1); % C x T x D
     true_centroid = mean(true_rates, 1);
-    trueSpread = mean(vecnorm(true_rates - true_centroid, 2, 3), 1)';
+    true_delta = TensorUtils.linearCombinationAlongDimension(true_rates - true_centroid, 3, W');
+    trueSpread = mean(vecnorm(true_delta, 2, 3), 1)';
         
     %%
     %plot results
@@ -98,7 +104,7 @@ function testSpreadSequential(plotDir, testCI, testPermTest)
     plot(tvec', [mn'-sd', mn'+sd'], 'Color', colors(1,:), 'LineStyle', '--');
     plot(tvec', [mn_un'-sd_un', mn_un'+sd_un'], 'Color', colors(2,:), 'LineStyle', '--');
 
-    title(['20 Trials']);
+    title(['Projected sequential spread']);
     xlabel('Time');
     ylabel('Spread');
 
@@ -112,6 +118,7 @@ function testSpreadSequential(plotDir, testCI, testPermTest)
     %confidence interval (using 3 methods). The coverage of the confidence
     %intervals is verified. 
 
+    return;
     if testCI
         nReps = 100;
         nDims = 100;

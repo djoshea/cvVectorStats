@@ -44,81 +44,106 @@ function [ euclideanDistance, squaredDistance, CI, CIDistribution ] = cvSpreadPr
     if nargin<7
         CIResamples = 10000;
     end
+    assert(iscell(data) && iscell(classIdx));
     
-    assert(iscell(class1) && isvector(class1));
-    assert(iscell(class2) && isvector(class2));
-    class1 = makecol(class1);
-    class2 = makecol(class2);
-    nDims = numel(class1);
-    nTime = size(class1{1}, 2);
+    classList = unique(cat(1, classIdx{:}));
+    nClasses = numel(classList);
+    nDims = numel(data);
+    nTime = size(data{1}, 2);
+    W = projectionKbyD';
     
-    assert(size(projectionKbyD, 2) == nDims);
-    W = projectionKbyD'; % K by D --> D x K
+    % first we split the data by class
+    dataByClass = cell(nClasses, nDims);
+    obsMat = nan(nClasses, nDims);
+    for d = 1:nDims
+        for c = 1:nClasses
+            mask = classIdx{d}==classList(c);
+            obsMat(c, d) = nnz(mask);
+            dataByClass{c, d} = data{d}(mask, :);
+        end
+    end
     
-    obsMat = cellfun(@(x) size(x, 1), [class1'; class2']); % 2 x D
+    obsMat = cellfun(@(x) size(x, 1), dataByClass); % C x D
     [bigFoldMatrices, smallFoldMatrices, nFoldsByDim, nObsBig, nObsSmall] = getSequentialFoldIndicatorMatrices(obsMat); % C x D { nFolds x obsMat(c, d) } logical indicator matrices
     
     % compute the big (Delta) and small (delta) fold differences for each fold (for each dimension)
     % if we multiply foldMatrices{1, d} * class1{d}, we have sum of observations included in each fold as nFolds x T
     % if instead of using foldMatrices directly, we normalize by the number of included rows to average appropriately
     % want to assmelbe these set-wise means into F x T x D matrices, which can then be reshaped and multiplied
-    [mean_Delta, mean_delta] = deal(nan(nDims, nTime)); 
+    [mean_Delta, mean_delta] = deal(nan(nDims, nTime, nClasses)); 
     A = nan(nDims, nDims, nTime); % D x D x T
     for d = 1:nDims
-        bigMeans1 = bigFoldMatrices{1, d} * class1{d} ./ nObsBig{1,d}; % (F x nObs) * (nObs x T) --> F x T
-        bigMeans2 = bigFoldMatrices{2, d} * class2{d} ./ nObsBig{2,d}; % (F x nObs) * (nObs x T) --> F x T
-        smallMeans1 = smallFoldMatrices{1, d} * class1{d}./ nObsSmall{1,d}; % (F x nObs) * (nObs x T) --> F x T
-        smallMeans2 = smallFoldMatrices{2, d} * class2{d} ./ nObsSmall{2,d}; % (F x nObs) * (nObs x T) --> F x T
+        [bigMeans, smallMeans] = deal(nan(nFoldsByDim(d), nTime, nClasses));
+        for c = 1:nClasses
+            bigMeans(:, :, c) = bigFoldMatrices{c, d} * dataByClass{c,d} ./ nObsBig{c,d}; % (F x nObs) * (nObs x T) --> F x T
+            smallMeans(:, :, c) = smallFoldMatrices{c, d} * dataByClass{c,d} ./ nObsSmall{c,d}; % (F x nObs) * (nObs x T) --> F x T
+        end
+        bigCentroid = mean(bigMeans, 3); % F x T x C --> F x T x 1
+        smallCentroid = mean(smallMeans, 3); % F x T x C --> F x T x 1
         
-        mean_Delta(d, :) = mean(bigMeans1 - bigMeans2, 1); % F x T --> 1 x T
-        mean_delta(d, :) = mean(smallMeans1 - smallMeans2, 1); % F x T --> 1 x T
+        % fill in the diagonal term of A
+        A(d, d, :) = shiftdim( sum( (bigMeans - bigCentroid) .* (smallMeans - smallCentroid), [1, 3]) ./ (nClasses * nFoldsByDim(d)), -1); % F x T x C --> 1 x T --> 1 x 1 xT
         
-        % and fill in the diagonal term of A
-        A(d, d, :) = mean( (bigMeans1 - bigMeans2) .* (smallMeans1 - smallMeans2), 1); % F x T --> 1 x T
+        % needed for the off-diagonal d ~= d' terms below
+        mean_Delta(d, :, :) = mean(bigMeans - bigCentroid, 1);     % F x T x C --> 1 x T x C
+        mean_delta(d, :, :) = mean(smallMeans - smallCentroid, 1); % F x T x C --> 1 x T x C
     end
 
     % now loop over each pair of dimensions to fill in the off-diagonal terms
     for d = 1:nDims
         for e = 1:nDims
             if d == e, continue, end
-            A(d, e, :) = mean_Delta(d, :) .* mean_delta(e, :); % 1 x 1 x T
+            A(d, e, :) = shiftdim(mean(mean_Delta(d, :, :) .* mean_delta(e, :, :), 3), -1); % 1 x T x C --> 1 x T --> 1 x 1 x T
         end
     end
 
-    % Now we have A (D x D x T) and want to compute
+    % Now we have A (D x D x T) and want to compute D^2
     squaredDistance = nan(1, nTime);
     for t = 1:nTime
         squaredDistance(t) = trace(W' * A(:, :, t) * W);
     end
-   euclideanDistance = sign(squaredDistance).*sqrt(abs(squaredDistance)); % 1 x T
+    euclideanDistance = sign(squaredDistance).*sqrt(abs(squaredDistance)); % 1 x T
     
     %compute confidence interval if requensted
     if ~strcmp(CIMode, 'none')
-        wrapperFun = @(x,y)(ciWrapper(x,y, projectionKbyD, subtractMean));
-        [CI, CIDistribution] = cvCISequential([euclideanDistance, squaredDistance], wrapperFun, {class1, class2}, CIMode, CIAlpha, CIResamples);
+        % the confidence interval functions cvJackknifeCI and cvBootstrapCI expect a single input that is 
+        
+        % dataByClass is nClasses x nDims { nObs x T }
+        % cvCISequential needs nClasses { nDims { nObs x T } } 
+        classCell = cell(nClasses,1);
+        for n=1:nClasses
+            classCell{n} = dataByClass(c, :)';
+        end
+        
+        [CI, CIDistribution] = cvCISequential([euclideanDistance; squaredDistance], @(varargin) ciWrapper(subtractMean, varargin{:}), classCell, CIMode, CIAlpha, CIResamples);
     else
         CI = [];
         CIDistribution = [];
     end
 end
 
-function output = ciWrapper(class1, class2, projectionKbyD, subtractMean)
-    [ euclideanDistance, squaredDistance ] = cvDistanceProjectedSequential( class1, class2, projectionKbyD, subtractMean );
-    output = [euclideanDistance, squaredDistance];
+function output = ciWrapper(subtractMean, varargin)
+     % varargin is nClasses { nDims { nObs x T } }
+     % cvSpreadSequential needs nDims { nObs x T } for all classes combined
+     dataFlat = cat(2, varargin{:}); % D x C
+     nDims = size(dataFlat, 1);
+     data = cell(nDims, 1);
+     classIdx = cell(nDims, 1);
+     for d = 1:nDims
+         [data{d}, classIdx{d}] = catWhich(1, dataFlat{d, :});
+     end
+     
+    [ euclideanDistance, squaredDistance ] = cvSpreadSequential( data, classIdx, subtractMean );
+    output = [euclideanDistance; squaredDistance];
 end
 
-function vec = makecol( vec )
-
-    % transpose if it's currently a row vector (unless its 0 x 1, keep as is)
-    if (size(vec,2) > size(vec, 1) && isvector(vec)) && ~(size(vec, 1) == 0 && size(vec, 2) == 1)
-        vec = vec';
+function [out, which] = catWhich(dim, varargin)
+    % works like cat, but returns a vector indicating which of the
+    % inputs each element of out came from
+    out = cat(dim, varargin{:});
+    if nargout > 1
+        which = cell2mat(makecol(cellfun(@(in, idx) idx*ones(size(in, dim), 1), varargin, ...
+            num2cell(1:numel(varargin)), 'UniformOutput', false)));
     end
-
-    if size(vec, 1) == 1 && size(vec, 2) == 0
-        vec = vec';
-    end
-
 end
-
-
 
